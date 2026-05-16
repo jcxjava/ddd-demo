@@ -1,0 +1,224 @@
+# 订餐平台订单创建功能架构设计文档
+
+## 1. 核心业务流程与实体关系
+
+### 1.1 业务流程
+1. **下单流程**：用户选择餐品 → 填写配送信息 → 提交订单 → 系统生成订单
+2. **验证流程**：必填字段检查 → 餐品商家一致性检查 → 价格计算
+3. **数据持久化**：保存订单信息、订单项信息
+
+### 1.2 实体关系
+- **Order（订单实体）**：包含订单基本信息、配送信息、价格信息
+- **OrderItem（订单项实体）**：包含具体餐品信息、数量、单价
+- **Merchant（商家实体）**：订单关联的商家
+
+## 2. DDD四层架构设计
+
+### 2.1 接口层（API Layer）
+```
+src/main/java/com/jiangcx/demo02/api/
+├── controller/
+│   └── OrderController.java          # 订单控制器
+├── dto/
+│   ├── request/
+│   │   ├── CreateOrderRequest.java   # 创建订单请求DTO
+│   │   └── OrderItemRequest.java     # 订单项请求DTO
+│   └── response/
+│       ├── ApiResponse.java          # 统一响应对象
+│       └── OrderResponse.java        # 订单响应DTO
+```
+
+### 2.2 应用层（Application Layer）
+```
+src/main/java/com/jiangcx/demo02/application/
+├── service/
+│   └── OrderApplicationService.java  # 订单应用服务
+├── command/
+│   └── CreateOrderCommand.java       # 创建订单命令
+└── event/
+    └── OrderCreatedEvent.java        # 订单创建事件
+```
+
+### 2.3 领域层（Domain Layer）
+```
+src/main/java/com/jiangcx/demo02/domain/
+├── model/
+│   ├── aggregate/
+│   │   └── Order.java                # 订单聚合根
+│   └── entity/
+│       ├── OrderItem.java           # 订单项实体
+│       └── DeliveryInfo.java         # 配送信息实体
+├── service/
+│   ├── pricing/
+│   │   └── PriceCalculationService.java  # 价格计算领域服务
+│   └── validation/
+│       └── OrderValidationService.java    # 订单验证领域服务
+└── repository/
+    └── IOrderRepository.java          # 订单仓库接口
+```
+
+### 2.4 基础设施层（Infrastructure Layer）
+```
+src/main/java/com/jiangcx/demo02/infrastructure/
+├── repository/
+│   └── impl/
+│       └── OrderRepositoryImpl.java  # 订单仓库实现
+├── mapper/
+│   └── OrderMapper.java              # MyBatis Mapper接口
+└── config/
+    └── MyBatisConfig.java            # MyBatis配置
+```
+
+## 3. 数据流向与依赖关系
+
+### 3.1 数据流向
+1. **API层**接收HTTP请求，验证请求参数
+2. **应用层**协调领域服务，执行业务用例
+3. **领域层**封装核心业务逻辑和规则
+4. **基础设施层**提供数据持久化和外部服务
+
+### 3.2 依赖关系
+- **API层** → 应用层（单向依赖）
+- **应用层** → 领域层（单向依赖）
+- **领域层** → 基础设施层（通过接口依赖）
+- **基础设施层** ← 领域层（实现接口）
+
+## 4. 核心组件设计
+
+### 4.1 全局统一响应
+```java
+public class ApiResponse<T> {
+    private Integer code;
+    private String message;
+    private T data;
+    private Long timestamp;
+}
+```
+
+### 4.2 全局异常处理
+- 业务异常：BusinessException
+- 系统异常：SystemException
+- 参数验证异常：ValidationException
+
+### 4.3 分页通用组件
+```java
+public class PageResult<T> {
+    private List<T> records;
+    private long total;
+    private long size;
+    private long current;
+}
+```
+
+### 4.4 订单聚合根设计
+```java
+public class Order {
+    private String orderId;
+    private String orderNo;
+    private String userId;
+    private String merchantId;
+    private List<OrderItem> items;
+    private DeliveryInfo deliveryInfo;
+    private BigDecimal subtotal;      // 餐品总价
+    private BigDecimal packingFee;    // 打包费
+    private BigDecimal deliveryFee;   // 配送费
+    private BigDecimal totalAmount;   // 总金额
+    private String note;             // 备注
+    private OrderStatus status;       // 订单状态
+    private LocalDateTime createTime;  // 创建时间
+}
+```
+
+## 5. 数据库表结构设计
+
+### 5.1 订单表（orders）
+```sql
+CREATE TABLE orders (
+    order_id VARCHAR(32) PRIMARY KEY COMMENT '订单ID',
+    order_no VARCHAR(20) UNIQUE NOT NULL COMMENT '订单号',
+    user_id VARCHAR(32) NOT NULL COMMENT '用户ID',
+    merchant_id VARCHAR(32) NOT NULL COMMENT '商家ID',
+    subtotal DECIMAL(10,2) NOT NULL COMMENT '餐品总价',
+    packing_fee DECIMAL(10,2) NOT NULL DEFAULT 1.00 COMMENT '打包费',
+    delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 3.00 COMMENT '配送费',
+    total_amount DECIMAL(10,2) NOT NULL COMMENT '总金额',
+    note VARCHAR(200) COMMENT '备注',
+    status VARCHAR(20) NOT NULL COMMENT '订单状态',
+    create_time DATETIME NOT NULL COMMENT '创建时间'
+);
+```
+
+### 5.2 订单项表（order_items）
+```sql
+CREATE TABLE order_items (
+    id VARCHAR(32) PRIMARY KEY,
+    order_id VARCHAR(32) NOT NULL,
+    product_id VARCHAR(32) NOT NULL,
+    product_name VARCHAR(100) NOT NULL,
+    quantity INT NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    total_price DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+);
+```
+
+## 6. 价格计算服务设计
+
+```java
+public class PriceCalculationService {
+    private static final BigDecimal PACKING_FEE = BigDecimal.valueOf(1.00);
+    private static final BigDecimal DELIVERY_FEE = BigDecimal.valueOf(3.00);
+
+    public void calculateOrderPrice(Order order) {
+        // 计算餐品总价
+        BigDecimal subtotal = order.getItems().stream()
+            .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 设置费用
+        order.setSubtotal(subtotal);
+        order.setPackingFee(PACKING_FEE);
+        order.setDeliveryFee(DELIVERY_FEE);
+
+        // 计算总金额
+        BigDecimal total = subtotal.add(PACKING_FEE).add(DELIVERY_FEE);
+        order.setTotalAmount(total);
+    }
+}
+```
+
+## 7. 标准化开发顺序
+
+1. **第一阶段**：基础设施层
+   - 数据库表结构设计
+   - MyBatis Mapper接口和XML
+   - Repository实现类
+
+2. **第二阶段**：领域层
+   - 实体类设计（Order、OrderItem、DeliveryInfo）
+   - 领域服务实现（价格计算、订单验证）
+   - Repository接口定义
+
+3. **第三阶段**：应用层
+   - 命令和事件对象
+   - 应用服务实现
+   - 事务管理
+
+4. **第四阶段**：接口层
+   - DTO对象设计
+   - 统一响应和异常处理
+   - Controller实现
+
+5. **第五阶段**：配置和集成
+   - 全局配置类
+   - 统一异常处理器
+   - API文档生成
+
+## 8. 技术选型
+
+- **框架**：Spring Boot 3.5.14
+- **ORM**：MyBatis-Plus 3.5.16
+- **数据库**：MySQL 8.0+
+- **Java版本**：17
+- **构建工具**：Maven
+- **API文档**：SpringDoc OpenAPI 2.8.13

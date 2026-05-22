@@ -1,6 +1,6 @@
 package com.jiangcx.demo02.common.model.api;
 
-import com.jiangcx.demo02.common.enum.ResponseCode;
+import com.jiangcx.demo02.common.enums.ResponseCode;
 import lombok.Data;
 
 import java.io.Serializable;

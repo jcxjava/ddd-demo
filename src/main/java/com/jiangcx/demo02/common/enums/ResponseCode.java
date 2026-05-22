@@ -1,4 +1,4 @@
-package com.jiangcx.demo02.common.enum;
+package com.jiangcx.demo02.common.enums;
 
 /**
  * 响应码枚举

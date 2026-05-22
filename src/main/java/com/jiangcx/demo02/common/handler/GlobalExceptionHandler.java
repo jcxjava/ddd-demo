@@ -2,7 +2,7 @@ package com.jiangcx.demo02.common.handler;
 
 import com.jiangcx.demo02.common.exception.BusinessException;
 import com.jiangcx.demo02.common.model.api.ApiResponse;
-import com.jiangcx.demo02.common.enum.ResponseCode;
+import com.jiangcx.demo02.common.enums.ResponseCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

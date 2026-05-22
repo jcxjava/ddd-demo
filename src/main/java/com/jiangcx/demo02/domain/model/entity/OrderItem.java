@@ -5,6 +5,9 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
+/**
+ * 订单明细项，表示订单中的单个餐品及其数量、价格
+ */
 @Data
 @NoArgsConstructor
 public class OrderItem {
